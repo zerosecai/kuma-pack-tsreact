@@ -1,9 +1,10 @@
 /**
- * Phase 4 Day 2 — Chunker
+ * Chunker
  *
- * Walks source/, splits each .md file at H1/H2 boundaries,
- * writes atomic chunks to build/chunks/ and an index to
- * build/chunks-index.json.
+ * Walks source/, splits each .md file at H1/H2 boundaries (Pass 1),
+ * then sub-splits any H1/H2 chunk over TOKEN_MAX along H3 boundaries
+ * (Pass 2, Day 4). Writes atomic chunks to build/chunks/ and an index
+ * to build/chunks-index.json.
  *
  * Why these limits:
  * - bge-small-en-v1.5 has a 512-token max input. We target 1000 tokens
@@ -12,6 +13,12 @@
  *   not model limits.
  * - chars / 4 is the standard rough token estimate for English prose;
  *   close enough for budgeting without pulling in a tokenizer dep.
+ *
+ * Why two-pass:
+ * - react.dev "Usage" H2 sections regularly hit 5,000–13,000 tokens
+ *   inside one heading, which the embedder truncates at 512 tokens.
+ *   Splitting along H3 keeps semantic units intact while staying in
+ *   the model's effective input window.
  */
 
 import { mkdir, readFile, readdir, writeFile, rm } from "node:fs/promises";
@@ -107,6 +114,83 @@ function splitByHeadings(content: string): RawSplit[] {
   return chunks;
 }
 
+interface H3Boundary {
+  line: number;
+  title: string;
+}
+
+/**
+ * Find H3 boundaries in a markdown body, skipping `### ` lines that
+ * appear inside fenced code blocks (``` or ~~~). Used by the
+ * Pass-2 splitter to avoid false matches against shell prompts,
+ * code comments, etc. that happen to start with three hashes.
+ */
+function findH3Boundaries(content: string): H3Boundary[] {
+  const lines = content.split(/\r?\n/);
+  const result: H3Boundary[] = [];
+  let inFence = false;
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (/^\s{0,3}(```|~~~)/.test(line)) {
+      inFence = !inFence;
+      continue;
+    }
+    if (inFence) continue;
+    const m = line.match(/^### (.+)$/);
+    if (m) result.push({ line: i, title: m[1].trim() });
+  }
+  return result;
+}
+
+/**
+ * Pass 2: when an H1/H2 chunk is over TOKEN_MAX, attempt to split it
+ * along H3 boundaries. Returns the original split unchanged if no H3
+ * markers are present (let the upstream warning fire). Sub-chunk
+ * titles are prefixed with the parent H2 for context, e.g. the
+ * "Connecting to an external system" H3 inside "Usage" becomes
+ * "Usage — Connecting to an external system".
+ *
+ * Preface handling (text between the H2 line and the first H3):
+ * - If the preface is below TOKEN_MIN, prepend it to the first
+ *   H3 sub-chunk so the H2 intro context isn't lost.
+ * - Otherwise emit it as a stand-alone "{H2} — Overview" chunk.
+ */
+function splitByH3(rawSplit: RawSplit): RawSplit[] {
+  const h3s = findH3Boundaries(rawSplit.body);
+  if (h3s.length === 0) return [rawSplit];
+
+  const lines = rawSplit.body.split(/\r?\n/);
+  const preface = lines.slice(0, h3s[0].line).join("\n").trim();
+  const prefaceTokens = estimateTokens(preface);
+  const mergePrefaceWithFirst = prefaceTokens < TOKEN_MIN;
+
+  const out: RawSplit[] = [];
+
+  // Emit preface as its own chunk only if it carries enough signal
+  // to embed meaningfully. Otherwise it'll ride with the first H3.
+  if (preface.length > 0 && !mergePrefaceWithFirst) {
+    out.push({
+      title: `${rawSplit.title} — Overview`,
+      body: preface,
+    });
+  }
+
+  for (let i = 0; i < h3s.length; i++) {
+    const start = h3s[i].line;
+    const end = i + 1 < h3s.length ? h3s[i + 1].line : lines.length;
+    let body = lines.slice(start, end).join("\n").trim();
+    if (i === 0 && mergePrefaceWithFirst && preface.length > 0) {
+      body = preface + "\n\n" + body;
+    }
+    out.push({
+      title: `${rawSplit.title} — ${h3s[i].title}`,
+      body,
+    });
+  }
+
+  return out;
+}
+
 async function processFile(
   sourcePath: string,
   records: ChunkRecord[],
@@ -128,35 +212,44 @@ async function processFile(
   const subtopic = segments[1] ?? "";
 
   for (const split of effective) {
-    const tokenEstimate = estimateTokens(split.body);
-
-    if (tokenEstimate < TOKEN_MIN) {
-      console.warn(
-        `  ⚠ undersized chunk (${tokenEstimate} tok) in ${rel}: "${split.title}"`,
-      );
-    } else if (tokenEstimate > TOKEN_MAX) {
-      console.warn(
-        `  ⚠ oversized chunk (${tokenEstimate} tok > ${TOKEN_MAX}) in ${rel}: "${split.title}"`,
-      );
+    // Pass 2: oversized H1/H2? try sub-splitting at H3 boundaries.
+    let pieces: RawSplit[] = [split];
+    if (estimateTokens(split.body) > TOKEN_MAX) {
+      const sub = splitByH3(split);
+      if (sub.length > 1) pieces = sub;
     }
 
-    const sectionSlug = slugify(split.title) || "untitled";
-    const id = `${relNoExt}/${sectionSlug}`;
-    const filenameSlug = id.replace(/\//g, "-");
-    const chunkPath = toPosix(join(CHUNKS_DIR, `${filenameSlug}.md`));
+    for (const piece of pieces) {
+      const tokenEstimate = estimateTokens(piece.body);
 
-    await writeFile(chunkPath, split.body, "utf-8");
+      if (tokenEstimate < TOKEN_MIN) {
+        console.warn(
+          `  ⚠ undersized chunk (${tokenEstimate} tok) in ${rel}: "${piece.title}"`,
+        );
+      } else if (tokenEstimate > TOKEN_MAX) {
+        console.warn(
+          `  ⚠ oversized chunk (${tokenEstimate} tok > ${TOKEN_MAX}) in ${rel}: "${piece.title}"`,
+        );
+      }
 
-    records.push({
-      id,
-      sourcePath: toPosix(sourcePath),
-      chunkPath,
-      topic,
-      subtopic,
-      title: split.title,
-      tokenEstimate,
-      characterCount: split.body.length,
-    });
+      const sectionSlug = slugify(piece.title) || "untitled";
+      const id = `${relNoExt}/${sectionSlug}`;
+      const filenameSlug = id.replace(/\//g, "-");
+      const chunkPath = toPosix(join(CHUNKS_DIR, `${filenameSlug}.md`));
+
+      await writeFile(chunkPath, piece.body, "utf-8");
+
+      records.push({
+        id,
+        sourcePath: toPosix(sourcePath),
+        chunkPath,
+        topic,
+        subtopic,
+        title: piece.title,
+        tokenEstimate,
+        characterCount: piece.body.length,
+      });
+    }
   }
 }
 
