@@ -1,0 +1,35 @@
+{
+  "$schema": "https://kuma-skill-tools.zerosec-ai.com/manifest.schema.json",
+  "id": "tsreact",
+  "name": "TypeScript + React + Vite Pack",
+  "version": "0.0.1-alpha",
+  "description": "Knowledge pack covering TypeScript, React, and Vite for AI coding agents",
+  "author": "ZeroSec AI",
+  "license": "MIT",
+  "homepage": "https://zerosec-ai.com",
+  "repository": "https://github.com/zerosecai/kuma-pack-tsreact",
+  "kuma": {
+    "minVersion": "0.1.0",
+    "embeddingModel": "Xenova/bge-small-en-v1.5",
+    "vectorDimensions": 384,
+    "chunkSize": 1000
+  },
+  "topics": [
+    "typescript",
+    "typescript.types",
+    "typescript.handbook",
+    "typescript.patterns",
+    "react",
+    "react.hooks",
+    "react.components",
+    "react.patterns",
+    "vite",
+    "vite.config",
+    "vite.plugins"
+  ],
+  "stats": {
+    "totalChunks": 0,
+    "totalSize": "0 bytes",
+    "buildDate": null
+  }
+}

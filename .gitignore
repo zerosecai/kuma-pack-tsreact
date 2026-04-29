@@ -1,0 +1,7 @@
+node_modules/
+build/
+dist/
+*.kpack
+.DS_Store
+.env
+*.log
