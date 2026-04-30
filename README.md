@@ -2,7 +2,8 @@
 
 [![Website](https://img.shields.io/badge/Website-zerosec--ai.com-00E5FF?style=flat-square)](https://zerosec-ai.com)
 [![License](https://img.shields.io/badge/License-MIT-00E5FF?style=flat-square)](LICENSE)
-[![Status](https://img.shields.io/badge/Status-M1%20Complete-FFB300?style=flat-square)](#)
+[![Status](https://img.shields.io/badge/Status-M1%20Done%20%2B%20M2%20Partial-FFB300?style=flat-square)](#)
+[![Chunks](https://img.shields.io/badge/Chunks-216-7C4DFF?style=flat-square)](#)
 [![Parent](https://img.shields.io/badge/Parent-Kuma%20Code-7C4DFF?style=flat-square)](https://github.com/zerosecai/kuma-code)
 
 > Skill pack for [Kuma Code](https://github.com/zerosecai/kuma-code) covering TypeScript, React, and Vite.
@@ -15,14 +16,24 @@ Skill packs work by injecting relevant documentation, type definitions, and patt
 
 ## Status
 
-🚧 **Day 2 — M1 (build pipeline) complete.** Currently 9 sample chunks. Day 3-7: scaling content to ~1 GB. Not yet wired into Kuma extension.
+🟢 **Day 4 — M1 complete + M2 partial.** Currently 216 chunks from real TypeScript / React / Vite docs. Not yet wired into Kuma extension.
 
-| Milestone | Status |
-|-----------|--------|
-| M1: Build pipeline (chunk → embed → index → package) | ✅ Done |
-| M2: Content scaling (~1 GB) | ⬜ In progress |
-| M3: Extension integration | ⬜ Pending |
-| M4: Quality benchmarks | ⬜ Pending |
+Latest: [v0.1.0-alpha](https://github.com/zerosecai/kuma-pack-tsreact/releases/tag/v0.1.0-alpha)
+
+| Milestone | Status | Detail |
+|-----------|--------|--------|
+| M1: Build pipeline | ✅ Done | chunk → embed → index → package |
+| M2: Content scaling | 🟡 Partial | 216 chunks (target: ~1 GB) |
+| M3: Extension integration | ⬜ Pending | Week 5-6 |
+| M4: Quality + benchmarks | ⬜ Pending | Week 7-8 |
+
+### Latest stats
+
+- **Chunks:** 216 (TypeScript: 73, React: 59, Vite: 84)
+- **Pack size:** 981 KB packed (2.2 MB raw)
+- **Embedding model:** bge-small-en-v1.5 (384 dims, ~30 MB)
+- **Build time:** ~10s end-to-end
+- **Semantic search:** 5/5 test queries → correct top match
 
 ## Build
 
